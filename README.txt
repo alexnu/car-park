@@ -1,0 +1,1 @@
+Parking monitoring system based on wireless sensor networks - Bachelor thesis
