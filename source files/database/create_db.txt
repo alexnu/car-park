@@ -1,0 +1,140 @@
+DROP DATABASE IF EXISTS carpark;
+CREATE DATABASE carpark;
+USE carpark;
+
+CREATE TABLE node(
+id INT NOT NULL,
+seq_no INT NOT NULL,
+status INT NOT NULL,
+type INT NOT NULL,
+battery DOUBLE NOT NULL,
+last_contact TIMESTAMP,
+address VARCHAR(50) NOT NULL,
+latitude INT NOT NULL,
+longitude INT NOT NULL,
+PRIMARY KEY(id)
+);
+
+CREATE TABLE event(
+node_id INT NOT NULL,
+seq_no INT NOT NULL,
+status INT NOT NULL,
+type INT NOT NULL,
+battery DOUBLE NOT NULL,
+timestamp TIMESTAMP NOT NULL,
+PRIMARY KEY(node_id, seq_no),
+FOREIGN KEY (node_id) REFERENCES node(id)
+ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE occupancy(
+timestamp TIMESTAMP NOT NULL,
+vehicles INT NOT NULL,
+type0 INT NOT NULL,
+type1 INT NOT NULL,
+type2 INT NOT NULL,
+type3 INT NOT NULL,
+type4 INT NOT NULL,
+PRIMARY KEY(timestamp, vehicles)
+);
+
+CREATE TABLE stay_time(
+duration TIME NOT NULL
+);
+
+CREATE TABLE entrance(
+timestamp TIMESTAMP NOT NULL,
+type INT NOT NULL,
+speed INT NOT NULL,
+direction INT NULL
+);
+
+delimiter $
+CREATE TRIGGER event_check BEFORE INSERT ON event
+FOR EACH ROW
+BEGIN
+IF (@DISABLE_TRIGGERS IS NULL) THEN
+	SELECT status FROM node WHERE id=NEW.node_id INTO @prv_status;
+	IF @prv_status != NEW.status THEN
+		IF NEW.status = 1 THEN
+			BEGIN
+				DECLARE veh INT;
+				DECLARE t0 INT;
+				DECLARE t1 INT;
+				DECLARE t2 INT;
+				DECLARE t3 INT;
+				DECLARE t4 INT;
+				SELECT vehicles, type0, type1, type2, type3, type4 INTO veh, t0, t1, t2, t3, t4 FROM occupancy ORDER BY timestamp DESC LIMIT 1;
+				IF NEW.type = 0 THEN SET t0 = t0 + 1;
+				ELSEIF NEW.type = 1 THEN SET t1 = t1 + 1;
+				ELSEIF NEW.type = 2 THEN SET t2 = t2 + 1;
+				ELSEIF NEW.type = 3 THEN SET t3 = t3 + 1;
+				ELSEIF NEW.type = 4 THEN SET t4 = t4 + 1;
+				END IF;
+				SET veh = veh + 1;
+
+				INSERT INTO occupancy VALUES (NEW.timestamp, veh, t0, t1, t2, t3, t4);
+			END;
+		ELSE
+			BEGIN
+				DECLARE veh INT;
+				DECLARE t0 INT;
+				DECLARE t1 INT;
+				DECLARE t2 INT;
+				DECLARE t3 INT;
+				DECLARE t4 INT;
+				SELECT vehicles, type0, type1, type2, type3, type4 INTO veh, t0, t1, t2, t3, t4 
+					FROM occupancy ORDER BY timestamp DESC LIMIT 1;
+				IF NEW.type = 0 THEN SET t0 = t0 - 1;
+				ELSEIF NEW.type = 1 THEN SET t1 = t1 - 1;
+				ELSEIF NEW.type = 2 THEN SET t2 = t2 - 1;
+				ELSEIF NEW.type = 3 THEN SET t3 = t3 - 1;
+				ELSEIF NEW.type = 4 THEN SET t4 = t4 - 1;
+				END IF;
+				SET veh = veh - 1;
+
+				INSERT INTO occupancy VALUES (NEW.timestamp, veh, t0, t1, t2, t3, t4);
+
+				SELECT seq_no FROM event WHERE node_id=NEW.node_id AND status=0 AND seq_no!=NEW.seq_no
+					ORDER BY seq_no DESC LIMIT 1 INTO @index;
+				SELECT timestamp FROM event WHERE node_id=NEW.node_id AND seq_no > @index 
+					LIMIT 1 INTO @time;
+				SET @diff = TIMEDIFF(NEW.timestamp,@time);
+				INSERT INTO stay_time VALUES (@diff);
+			END;
+		END IF;
+	END IF;
+	UPDATE node SET seq_no=NEW.seq_no, status=NEW.status, type=NEW.type, battery=NEW.battery, last_contact=NEW.timestamp
+		WHERE id=NEW.node_id;	
+END IF;
+END;$
+
+CREATE PROCEDURE reset_database(IN start TIMESTAMP)
+BEGIN
+	DELETE FROM node;
+	DELETE FROM event;
+	DELETE FROM occupancy;
+	DELETE FROM stay_time;
+	DELETE FROM entrance;
+	SET @DISABLE_TRIGGERS=1;
+	INSERT INTO node VALUES (0, 0, 0, 0, 1.0, start, '28is Octovriou 38, Patra', 38251381, 21741867);
+	INSERT INTO node VALUES (1, 0, 0, 0, 1.0, start, 'Kwnstantinoupoleos 43, Patra', 38254571, 21742510);
+	INSERT INTO node VALUES (2, 0, 0, 0, 1.0, start, 'Kolokotroni 34, Patra', 38248218, 21737575);
+	INSERT INTO node VALUES (3, 0, 0, 0, 1.0, start, 'Karaiskaki 70, Patra', 38246769, 21738659);
+	INSERT INTO node VALUES (4, 0, 0, 0, 1.0, start, 'Maizonos 107, Patra', 38247325, 21736041);
+	INSERT INTO node VALUES (5, 0, 0, 0, 1.0, start, 'Kanakari 163, Patra', 38244890, 21735365);
+	INSERT INTO node VALUES (6, 0, 0, 0, 1.0, start, 'Ermou 10, Patra', 38247991, 21734260);
+	INSERT INTO node VALUES (7, 0, 0, 0, 1.0, start, 'Zaimi 48, Patra', 38248870, 21739558);
+	INSERT INTO event VALUES (0, 0, 0, 0, 1.0, start);
+	INSERT INTO event VALUES (1, 0, 0, 0, 1.0, start);
+	INSERT INTO event VALUES (2, 0, 0, 0, 1.0, start);
+	INSERT INTO event VALUES (3, 0, 0, 0, 1.0, start);
+	INSERT INTO event VALUES (4, 0, 0, 0, 1.0, start);
+	INSERT INTO event VALUES (5, 0, 0, 0, 1.0, start);
+	INSERT INTO event VALUES (6, 0, 0, 0, 1.0, start);
+	INSERT INTO event VALUES (7, 0, 0, 0, 1.0, start);
+	INSERT INTO occupancy VALUES (start, 0, 0, 0, 0, 0, 0);
+	SET @DISABLE_TRIGGERS=NULL;
+END;$
+
+delimiter ;
